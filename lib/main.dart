@@ -41,6 +41,7 @@ class _InchCalculatorState extends State<InchCalculator>
   String result = "0";
   List<Map<String, String>> history = [];
   bool isBase8Mode = true;
+  bool _justEvaluated = false;
 
   late AnimationController _displayController;
   late Animation<double> _displayOpacity;
@@ -206,7 +207,7 @@ class _InchCalculatorState extends State<InchCalculator>
     }
   }
 
-  void onButtonTap(String text) async {
+  /*void onButtonTap(String text) async {
     _displayController.forward().then((_) {
       _displayController.reverse();
     });
@@ -268,7 +269,215 @@ class _InchCalculatorState extends State<InchCalculator>
         _insertTextAtCursor(text);
       }
     });
+  }*/
+
+  void onButtonTap(String text) async {
+    _displayController.forward().then((_) {
+      _displayController.reverse();
+    });
+
+    _focusNode.requestFocus();
+
+    setState(() {
+      if (text == "C") {
+        _justEvaluated = false;
+        _equationController.value = const TextEditingValue(
+          text: "0",
+          selection: TextSelection.collapsed(offset: 1),
+        );
+        result = "0";
+
+      } else if (text == "⌫") {
+        _justEvaluated = false;
+        _handleBackspace();
+
+      } else if (text == "=") {
+        try {
+          String expText = _equationController.text;
+          expText = expText.replaceAllMapped(
+              RegExp(r'(\d)([\(√])'), (m) => '${m[1]}*${m[2]}');
+          expText = expText.replaceAllMapped(
+              RegExp(r'([\)%²])([\d\(√])'), (m) => '${m[1]}*${m[2]}');
+
+          int openBrackets = expText.split('(').length - 1;
+          int closeBrackets = expText.split(')').length - 1;
+          if (openBrackets > closeBrackets) {
+            expText += ')' * (openBrackets - closeBrackets);
+          }
+          expText = expText
+              .replaceAll('×', '*')
+              .replaceAll('÷', '/')
+              .replaceAll('%', '/100')
+              .replaceAll('²', '^2')
+              .replaceAll('√', 'sqrt');
+
+          expText = processEquationForEvaluation(expText, isBase8Mode);
+
+          Parser p = Parser();
+          Expression exp = p.parse(expText);
+          ContextModel cm = ContextModel();
+
+          double eval = exp.evaluate(EvaluationType.REAL, cm);
+          result = formatResult(eval, isBase8Mode);
+
+          history.insert(0, {
+            "equation": _equationController.text,
+            "result": result,
+            "mode": isBase8Mode ? "8-Parts" : "10-Parts"
+          });
+          saveHistory();
+
+          _justEvaluated = true;
+
+        } catch (e) {
+          result = "Error";
+          _justEvaluated = false;
+        }
+
+      } else if (text == "x²") {
+        _justEvaluated = false;
+        _insertTextAtCursor("²");
+
+      } else if (text == "√") {
+        _justEvaluated = false;
+        _insertTextAtCursor("√(");
+
+      } else {
+        final operators = ['+', '-', '×', '÷', '%'];
+        final currentText = _equationController.text;
+        if (operators.contains(text) && _justEvaluated) {
+          _equationController.value = TextEditingValue(
+            text: result + text,
+            selection: TextSelection.collapsed(offset: result.length + text.length),
+          );
+          _justEvaluated = false;
+          return;
+        }
+        // if (_justEvaluated) {
+        //   _equationController.value = TextEditingValue(
+        //     text: text,
+        //     selection: TextSelection.collapsed(offset: text.length),
+        //   );
+        //   _justEvaluated = false;
+        //   return;
+        // }
+
+        if (operators.contains(text) && currentText.isNotEmpty) {
+          final lastChar = currentText[currentText.length - 1];
+          if (operators.contains(lastChar)) {
+            final newText = currentText.substring(0, currentText.length - 1) + text;
+            _equationController.value = TextEditingValue(
+              text: newText,
+              selection: TextSelection.collapsed(offset: newText.length),
+            );
+            return;
+          }
+        }
+
+        if (text == ".") {
+          final lastOpIndex = currentText.lastIndexOf(RegExp(r'[+\-×÷%]'));
+          final currentSegment = currentText.substring(lastOpIndex + 1);
+          if (currentSegment.contains('.')) return;
+        }
+
+        if (currentText == "0" && !operators.contains(text) && text != ".") {
+          _equationController.value = TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: text.length),
+          );
+        } else {
+          _insertTextAtCursor(text);
+        }
+      }
+    });
   }
+
+  /*void onButtonTap(String text) async {
+    _displayController.forward().then((_) => _displayController.reverse());
+    _focusNode.requestFocus();
+
+    setState(() {
+      if (text == "C") {
+        _equationController.value = const TextEditingValue(
+          text: "0",
+          selection: TextSelection.collapsed(offset: 1),
+        );
+        result = "0";
+      } else if (text == "⌫") {
+        _handleBackspace();
+      } else if (text == "=") {
+        try {
+          String expText = _equationController.text;
+
+          // --- Standardizing the expression ---
+          expText = expText.replaceAllMapped(RegExp(r'(\d)([\(√])'), (m) => '${m[1]}*${m[2]}');
+          expText = expText.replaceAllMapped(RegExp(r'([\)%²])([\d\(√])'), (m) => '${m[1]}*${m[2]}');
+          int openBrackets = expText.split('(').length - 1;
+          int closeBrackets = expText.split(')').length - 1;
+          if (openBrackets > closeBrackets) expText += ')' * (openBrackets - closeBrackets);
+
+          expText = expText
+              .replaceAll('×', '*')
+              .replaceAll('÷', '/')
+              .replaceAll('%', '/100')
+              .replaceAll('²', '^2')
+              .replaceAll('√', 'sqrt');
+
+          expText = processEquationForEvaluation(expText, isBase8Mode);
+
+          Parser p = Parser();
+          Expression exp = p.parse(expText);
+          ContextModel cm = ContextModel();
+
+          double eval = exp.evaluate(EvaluationType.REAL, cm);
+          result = formatResult(eval, isBase8Mode);
+
+          history.insert(0, {
+            "equation": _equationController.text,
+            "result": result,
+            "mode": isBase8Mode ? "8-Parts" : "10-Parts"
+          });
+          saveHistory();
+
+          // REMOVED: We no longer update _equationController here.
+          // This keeps the original equation (e.g., 12+12) visible after pressing =.
+
+        } catch (e) {
+          result = "Error";
+        }
+      } else {
+        final operators = ['+', '-', '×', '÷', '%'];
+        final currentEq = _equationController.text;
+
+        // 1. Logic for chaining: If we have a result and user clicks an operator
+        if (result != "0" && result != "Error" && operators.contains(text)) {
+          // Check if the current equation is the one that produced the result
+          // (meaning user hasn't started typing a new number yet)
+          if (currentEq != result) {
+            _equationController.value = TextEditingValue(
+              text: result + text,
+              selection: TextSelection.collapsed(offset: (result + text).length),
+            );
+            return;
+          }
+        }
+
+        // 2. Logic for fresh start: If user clicks a number/sqrt after a calculation
+        if (result != "0" && !operators.contains(text) && currentEq != "0") {
+          // This is a subjective choice: If you want a fresh start when a number
+          // is pressed after '=', keep this. Otherwise, just append.
+        }
+
+        if (text == "x²") {
+          _insertTextAtCursor("²");
+        } else if (text == "√") {
+          _insertTextAtCursor("√(");
+        } else {
+          _insertTextAtCursor(text);
+        }
+      }
+    });
+  }*/
 
   void openHistory() {
     showModalBottomSheet(
